@@ -450,8 +450,8 @@ const initSSEConnection = () => {
     eventSource.close();
   }
 
-  // 创建SSE连接，使用/api前缀以确保通过代理转发到后端
-  eventSource = new EventSource('/api/battery-summary');
+  // 创建 SSE连接，使用/sse/stream 端点
+  eventSource = new EventSource('/api/sse/stream');
 
   // 监听消息事件
   eventSource.onmessage = (event) => {
@@ -459,7 +459,7 @@ const initSSEConnection = () => {
       const data = JSON.parse(event.data);
       updateDashboardData(data);
     } catch (error) {
-      console.error('解析SSE数据失败:', error);
+      console.error('解析 SSE 数据失败:', error);
     }
   };
 
@@ -473,7 +473,7 @@ const initSSEConnection = () => {
 
   // 监听连接打开事件
   eventSource.onopen = () => {
-    console.log('SSE连接已建立');
+    console.log('SSE连接已建立 - /api/sse/stream');
   };
 };
 
@@ -555,8 +555,8 @@ onMounted(() => {
   // 初始化SSE连接
   initSSEConnection();
   
-  // 初始加载数据，使用/api前缀以确保通过代理转发到后端
-  fetch('/api/battery-summary')
+  // 初始加载数据，使用/sse/stream 端点
+  fetch('/api/sse/stream')
     .then(response => response.json())
     .then(data => {
       updateDashboardData(data);
