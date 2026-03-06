@@ -44,12 +44,12 @@
           <!-- 地图背景 -->
           <div class="map-background" v-if="!showVideoStream">
             <div class="facility-layout">
-              <div class="building">A栋</div>
-              <div class="building">B栋</div>
+              <div class="building">A 栋</div>
+              <div class="building">B 栋</div>
               <div class="corridor">走廊</div>
             </div>
             
-            <!-- AMG8833热力图 -->
+            <!-- AMG8833 热力图 -->
             <div class="heatmap-overlay" v-if="showThermalOverlay">
               <!-- 热力图网格 -->
               <div 
@@ -97,7 +97,7 @@
               </div>
               <div class="robot-info">
                 <div class="robot-id">#{{ robot.id }}</div>
-                <div class="robot-battery">电量: {{ robot.battery }}%</div>
+                <div class="robot-battery">电量：{{ robot.battery }}%</div>
               </div>
             </div>
           </div>
@@ -119,7 +119,7 @@
         <!-- 控制面板 -->
         <div class="control-panel" v-if="!showVideoStream">
           <label>
-            <input type="checkbox" v-model="showThermalOverlay" /> 显示AMG8833 热力图
+            <input type="checkbox" v-model="showThermalOverlay" /> 显示 AMG8833 热力图
           </label>
           <button @click="toggleGridSize" class="btn btn-secondary">
             切换分辨率 ({{thermalGrid[0].length}}x{{thermalGrid.length}})
@@ -205,19 +205,10 @@
           </div>
         </div>
         
-        <!-- 控制台 -->
+        <!-- 温度折线图（替换原控制台） -->
         <div class="activity-section card">
-          <h3>控制台</h3>
-          <ul class="activity-list">
-            <li class="activity-item" v-for="(log, index) in mergedActivityLogs" :key="index" @click="scrollToMap">
-              <div class="activity-icon">{{ log.icon }}</div>
-              <div class="activity-content">
-                <h4>{{ log.title }}</h4>
-                <p v-html="formatLogMessage(log.message)"></p>
-                <span class="activity-time">{{ log.time }}</span>
-              </div>
-            </li>
-          </ul>
+          <h3>温度趋势</h3>
+          <div ref="temperatureChart" class="chart-container"></div>
         </div>
       </div>
     </div>
@@ -225,6 +216,7 @@
 
 <script setup>
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
+import * as echarts from 'echarts';
 
 // AMG8833 8x8 原始温度数据（最新数据）
 const original_8x8 = [
@@ -241,7 +233,49 @@ const original_8x8 = [
 // 32x32 插值温度数据（基于最新数据生成）
 const heatData32x32 = [
   [16.8, 17.08, 17.35, 17.58, 17.74, 17.8, 17.74, 17.54, 17.19, 16.71, 16.15, 15.57, 15.04, 14.62, 14.36, 14.29, 14.41, 14.69, 15.08, 15.52, 15.94, 16.29, 16.53, 16.64, 16.63, 16.52, 16.34, 16.12, 15.9, 15.71, 15.58, 15.52],
-  // ... 省略中间数据以保持简洁
+  [16.85, 17.13, 17.41, 17.64, 17.81, 17.87, 17.81, 17.61, 17.26, 16.78, 16.22, 15.64, 15.11, 14.69, 14.43, 14.36, 14.48, 14.76, 15.15, 15.59, 16.01, 16.36, 16.6, 16.71, 16.7, 16.59, 16.41, 16.19, 15.97, 15.78, 15.65, 15.59],
+  [17.0, 17.28, 17.56, 17.79, 17.96, 18.02, 17.96, 17.76, 17.41, 16.93, 16.37, 15.79, 15.26, 14.84, 14.58, 14.51, 14.63, 14.91, 15.3, 15.74, 16.16, 16.51, 16.75, 16.86, 16.85, 16.74, 16.56, 16.34, 16.12, 15.93, 15.8, 15.74],
+  [17.15, 17.43, 17.71, 17.94, 18.11, 18.17, 18.11, 17.91, 17.56, 17.08, 16.52, 15.94, 15.41, 14.99, 14.73, 14.66, 14.78, 15.06, 15.45, 15.89, 16.31, 16.66, 16.9, 17.01, 17.0, 16.89, 16.71, 16.49, 16.27, 16.08, 15.95, 15.89],
+  [17.3, 17.58, 17.86, 18.09, 18.26, 18.32, 18.26, 18.06, 17.71, 17.23, 16.67, 16.09, 15.56, 15.14, 14.88, 14.81, 14.93, 15.21, 15.6, 16.04, 16.46, 16.81, 17.05, 17.16, 17.15, 17.04, 16.86, 16.64, 16.42, 16.23, 16.1, 16.04],
+  [17.45, 17.73, 18.01, 18.24, 18.41, 18.47, 18.41, 18.21, 17.86, 17.38, 16.82, 16.24, 15.71, 15.29, 15.03, 14.96, 15.08, 15.36, 15.75, 16.19, 16.61, 16.96, 17.2, 17.31, 17.3, 17.19, 17.01, 16.79, 16.57, 16.38, 16.25, 16.19],
+  [17.6, 17.88, 18.16, 18.39, 18.56, 18.62, 18.56, 18.36, 18.01, 17.53, 16.97, 16.39, 15.86, 15.44, 15.18, 15.11, 15.23, 15.51, 15.9, 16.34, 16.76, 17.11, 17.35, 17.46, 17.45, 17.34, 17.16, 16.94, 16.72, 16.53, 16.4, 16.34],
+  [17.75, 18.03, 18.31, 18.54, 18.71, 18.77, 18.71, 18.51, 18.16, 17.68, 17.12, 16.54, 16.01, 15.59, 15.33, 15.26, 15.38, 15.66, 16.05, 16.49, 16.91, 17.26, 17.5, 17.61, 17.6, 17.49, 17.31, 17.09, 16.87, 16.68, 16.55, 16.49],
+  [17.9, 18.18, 18.46, 18.69, 18.86, 18.92, 18.86, 18.66, 18.31, 17.83, 17.27, 16.69, 16.16, 15.74, 15.48, 15.41, 15.53, 15.81, 16.2, 16.64, 17.06, 17.41, 17.65, 17.76, 17.75, 17.64, 17.46, 17.24, 17.02, 16.83, 16.7, 16.64],
+  [18.05, 18.33, 18.61, 18.84, 19.01, 19.07, 19.01, 18.81, 18.46, 17.98, 17.42, 16.84, 16.31, 15.89, 15.63, 15.56, 15.68, 15.96, 16.35, 16.79, 17.21, 17.56, 17.8, 17.91, 17.9, 17.79, 17.61, 17.39, 17.17, 16.98, 16.85, 16.79],
+  [18.2, 18.48, 18.76, 18.99, 19.16, 19.22, 19.16, 18.96, 18.61, 18.13, 17.57, 16.99, 16.46, 16.04, 15.78, 15.71, 15.83, 16.11, 16.5, 16.94, 17.36, 17.71, 17.95, 18.06, 18.05, 17.94, 17.76, 17.54, 17.32, 17.13, 17.0, 16.94],
+  [18.35, 18.63, 18.91, 19.14, 19.31, 19.37, 19.31, 19.11, 18.76, 18.28, 17.72, 17.14, 16.61, 16.19, 15.93, 15.86, 15.98, 16.26, 16.65, 17.09, 17.51, 17.86, 18.1, 18.21, 18.2, 18.09, 17.91, 17.69, 17.47, 17.28, 17.15, 17.09],
+  [18.5, 18.78, 19.06, 19.29, 19.46, 19.52, 19.46, 19.26, 18.91, 18.43, 17.87, 17.29, 16.76, 16.34, 16.08, 16.01, 16.13, 16.41, 16.8, 17.24, 17.66, 18.01, 18.25, 18.36, 18.35, 18.24, 18.06, 17.84, 17.62, 17.43, 17.3, 17.24],
+  [18.65, 18.93, 19.21, 19.44, 19.61, 19.67, 19.61, 19.41, 19.06, 18.58, 18.02, 17.44, 16.91, 16.49, 16.23, 16.16, 16.28, 16.56, 16.95, 17.39, 17.81, 18.16, 18.4, 18.51, 18.5, 18.39, 18.21, 17.99, 17.77, 17.58, 17.45, 17.39],
+  [18.8, 19.08, 19.36, 19.59, 19.76, 19.82, 19.76, 19.56, 19.21, 18.73, 18.17, 17.59, 17.06, 16.64, 16.38, 16.31, 16.43, 16.71, 17.1, 17.54, 17.96, 18.31, 18.55, 18.66, 18.65, 18.54, 18.36, 18.14, 17.92, 17.73, 17.6, 17.54],
+  [18.95, 19.23, 19.51, 19.74, 19.91, 19.97, 19.91, 19.71, 19.36, 18.88, 18.32, 17.74, 17.21, 16.79, 16.53, 16.46, 16.58, 16.86, 17.25, 17.69, 18.11, 18.46, 18.7, 18.81, 18.8, 18.69, 18.51, 18.29, 18.07, 17.88, 17.75, 17.69],
+  [19.1, 19.38, 19.66, 19.89, 20.06, 20.12, 20.06, 19.86, 19.51, 19.03, 18.47, 17.89, 17.36, 16.94, 16.68, 16.61, 16.73, 17.01, 17.4, 17.84, 18.26, 18.61, 18.85, 18.96, 18.95, 18.84, 18.66, 18.44, 18.22, 18.03, 17.9, 17.84],
+  [19.25, 19.53, 19.81, 20.04, 20.21, 20.27, 20.21, 20.01, 19.66, 19.18, 18.62, 18.04, 17.51, 17.09, 16.83, 16.76, 16.88, 17.16, 17.55, 17.99, 18.41, 18.76, 19.0, 19.11, 19.1, 18.99, 18.81, 18.59, 18.37, 18.18, 18.05, 17.99],
+  [19.4, 19.68, 19.96, 20.19, 20.36, 20.42, 20.36, 20.16, 19.81, 19.33, 18.77, 18.19, 17.66, 17.24, 16.98, 16.91, 17.03, 17.31, 17.7, 18.14, 18.56, 18.91, 19.15, 19.26, 19.25, 19.14, 18.96, 18.74, 18.52, 18.33, 18.2, 18.14],
+  [19.55, 19.83, 20.11, 20.34, 20.51, 20.57, 20.51, 20.31, 19.96, 19.48, 18.92, 18.34, 17.81, 17.39, 17.13, 17.06, 17.18, 17.46, 17.85, 18.29, 18.71, 19.06, 19.3, 19.41, 19.4, 19.29, 19.11, 18.89, 18.67, 18.48, 18.35, 18.29],
+  [19.7, 19.98, 20.26, 20.49, 20.66, 20.72, 20.66, 20.46, 20.11, 19.63, 19.07, 18.49, 17.96, 17.54, 17.28, 17.21, 17.33, 17.61, 18.0, 18.44, 18.86, 19.21, 19.45, 19.56, 19.55, 19.44, 19.26, 19.04, 18.82, 18.63, 18.5, 18.44],
+  [19.85, 20.13, 20.41, 20.64, 20.81, 20.87, 20.81, 20.61, 20.26, 19.78, 19.22, 18.64, 18.11, 17.69, 17.43, 17.36, 17.48, 17.76, 18.15, 18.59, 19.01, 19.36, 19.6, 19.71, 19.7, 19.59, 19.41, 19.19, 18.97, 18.78, 18.65, 18.59],
+  [20.0, 20.28, 20.56, 20.79, 20.96, 21.02, 20.96, 20.76, 20.41, 19.93, 19.37, 18.79, 18.26, 17.84, 17.58, 17.51, 17.63, 17.91, 18.3, 18.74, 19.16, 19.51, 19.75, 19.86, 19.85, 19.74, 19.56, 19.34, 19.12, 18.93, 18.8, 18.74],
+  [20.15, 20.43, 20.71, 20.94, 21.11, 21.17, 21.11, 20.91, 20.56, 20.08, 19.52, 18.94, 18.41, 17.99, 17.73, 17.66, 17.78, 18.06, 18.45, 18.89, 19.31, 19.66, 19.9, 20.01, 20.0, 19.89, 19.71, 19.49, 19.27, 19.08, 18.95, 18.89],
+  [20.3, 20.58, 20.86, 21.09, 21.26, 21.32, 21.26, 21.06, 20.71, 20.23, 19.67, 19.09, 18.56, 18.14, 17.88, 17.81, 17.93, 18.21, 18.6, 19.04, 19.46, 19.81, 20.05, 20.16, 20.15, 20.04, 19.86, 19.64, 19.42, 19.23, 19.1, 19.04],
+  [20.45, 20.73, 21.01, 21.24, 21.41, 21.47, 21.41, 21.21, 20.86, 20.38, 19.82, 19.24, 18.71, 18.29, 18.03, 17.96, 18.08, 18.36, 18.75, 19.19, 19.61, 19.96, 20.2, 20.31, 20.3, 20.19, 20.01, 19.79, 19.57, 19.38, 19.25, 19.19],
+  [20.6, 20.88, 21.16, 21.39, 21.56, 21.62, 21.56, 21.36, 21.01, 20.53, 19.97, 19.39, 18.86, 18.44, 18.18, 18.11, 18.23, 18.51, 18.9, 19.34, 19.76, 20.11, 20.35, 20.46, 20.45, 20.34, 20.16, 19.94, 19.72, 19.53, 19.4, 19.34],
+  [20.75, 21.03, 21.31, 21.54, 21.71, 21.77, 21.71, 21.51, 21.16, 20.68, 20.12, 19.54, 19.01, 18.59, 18.33, 18.26, 18.38, 18.66, 19.05, 19.49, 19.91, 20.26, 20.5, 20.61, 20.6, 20.49, 20.31, 20.09, 19.87, 19.68, 19.55, 19.49],
+  [20.9, 21.18, 21.46, 21.69, 21.86, 21.92, 21.86, 21.66, 21.31, 20.83, 20.27, 19.69, 19.16, 18.74, 18.48, 18.41, 18.53, 18.81, 19.2, 19.64, 20.06, 20.41, 20.65, 20.76, 20.75, 20.64, 20.46, 20.24, 20.02, 19.83, 19.7, 19.64],
+  [21.05, 21.33, 21.61, 21.84, 22.01, 22.07, 22.01, 21.81, 21.46, 20.98, 20.42, 19.84, 19.31, 18.89, 18.63, 18.56, 18.68, 18.96, 19.35, 19.79, 20.21, 20.56, 20.8, 20.91, 20.9, 20.79, 20.61, 20.39, 20.17, 19.98, 19.85, 19.79],
+  [21.2, 21.48, 21.76, 21.99, 22.16, 22.22, 22.16, 21.96, 21.61, 21.13, 20.57, 19.99, 19.46, 19.04, 18.78, 18.71, 18.83, 19.11, 19.5, 19.94, 20.36, 20.71, 20.95, 21.06, 21.05, 20.94, 20.76, 20.54, 20.32, 20.13, 20.0, 19.94],
+  [21.35, 21.63, 21.91, 22.14, 22.31, 22.37, 22.31, 22.11, 21.76, 21.28, 20.72, 20.14, 19.61, 19.19, 18.93, 18.86, 18.98, 19.26, 19.65, 20.09, 20.51, 20.86, 21.1, 21.21, 21.2, 21.09, 20.91, 20.69, 20.47, 20.28, 20.15, 20.09],
+  [21.5, 21.78, 22.06, 22.29, 22.46, 22.52, 22.46, 22.26, 21.91, 21.43, 20.87, 20.29, 19.76, 19.34, 19.08, 19.01, 19.13, 19.41, 19.8, 20.24, 20.66, 21.01, 21.25, 21.36, 21.35, 21.24, 21.06, 20.84, 20.62, 20.43, 20.3, 20.24],
+  [21.65, 21.93, 22.21, 22.44, 22.61, 22.67, 22.61, 22.41, 22.06, 21.58, 21.02, 20.44, 19.91, 19.49, 19.23, 19.16, 19.28, 19.56, 19.95, 20.39, 20.81, 21.16, 21.4, 21.51, 21.5, 21.39, 21.21, 20.99, 20.77, 20.58, 20.45, 20.39],
+  [21.8, 22.08, 22.36, 22.59, 22.76, 22.82, 22.76, 22.56, 22.21, 21.73, 21.17, 20.59, 20.06, 19.64, 19.38, 19.31, 19.43, 19.71, 20.1, 20.54, 20.96, 21.31, 21.55, 21.66, 21.65, 21.54, 21.36, 21.14, 20.92, 20.73, 20.6, 20.54],
+  [21.95, 22.23, 22.51, 22.74, 22.91, 22.97, 22.91, 22.71, 22.36, 21.88, 21.32, 20.74, 20.21, 19.79, 19.53, 19.46, 19.58, 19.86, 20.25, 20.69, 21.11, 21.46, 21.7, 21.81, 21.8, 21.69, 21.51, 21.29, 21.07, 20.88, 20.75, 20.69],
+  [22.1, 22.38, 22.66, 22.89, 23.06, 23.12, 23.06, 22.86, 22.51, 22.03, 21.47, 20.89, 20.36, 19.94, 19.68, 19.61, 19.73, 20.01, 20.4, 20.84, 21.26, 21.61, 21.85, 21.96, 21.95, 21.84, 21.66, 21.44, 21.22, 21.03, 20.9, 20.84],
+  [22.25, 22.53, 22.81, 23.04, 23.21, 23.27, 23.21, 23.01, 22.66, 22.18, 21.62, 21.04, 20.51, 20.09, 19.83, 19.76, 19.88, 20.16, 20.55, 20.99, 21.41, 21.76, 22.0, 22.11, 22.1, 21.99, 21.81, 21.59, 21.37, 21.18, 21.05, 20.99],
+  [22.4, 22.68, 22.96, 23.19, 23.36, 23.42, 23.36, 23.16, 22.81, 22.33, 21.77, 21.19, 20.66, 20.24, 19.98, 19.91, 20.03, 20.31, 20.7, 21.14, 21.56, 21.91, 22.15, 22.26, 22.25, 22.14, 21.96, 21.74, 21.52, 21.33, 21.2, 21.14],
+  [22.55, 22.83, 23.11, 23.34, 23.51, 23.57, 23.51, 23.31, 22.96, 22.48, 21.92, 21.34, 20.81, 20.39, 20.13, 20.06, 20.18, 20.46, 20.85, 21.29, 21.71, 22.06, 22.3, 22.41, 22.4, 22.29, 22.11, 21.89, 21.67, 21.48, 21.35, 21.29],
+  [22.7, 22.98, 23.26, 23.49, 23.66, 23.72, 23.66, 23.46, 23.11, 22.63, 22.07, 21.49, 20.96, 20.54, 20.28, 20.21, 20.33, 20.61, 21.0, 21.44, 21.86, 22.21, 22.45, 22.56, 22.55, 22.44, 22.26, 22.04, 21.82, 21.63, 21.5, 21.44],
+  [22.85, 23.13, 23.41, 23.64, 23.81, 23.87, 23.81, 23.61, 23.26, 22.78, 22.22, 21.64, 21.11, 20.69, 20.43, 20.36, 20.48, 20.76, 21.15, 21.59, 22.01, 22.36, 22.6, 22.71, 22.7, 22.59, 22.41, 22.19, 21.97, 21.78, 21.65, 21.59],
+  [23.0, 23.28, 23.56, 23.79, 23.96, 24.02, 23.96, 23.76, 23.41, 22.93, 22.37, 21.79, 21.26, 20.84, 20.58, 20.51, 20.63, 20.91, 21.3, 21.74, 22.16, 22.51, 22.75, 22.86, 22.85, 22.74, 22.56, 22.34, 22.12, 21.93, 21.8, 21.74],
+  [23.15, 23.43, 23.71, 23.94, 24.11, 24.17, 24.11, 23.91, 23.56, 23.08, 22.52, 21.94, 21.41, 20.99, 20.73, 20.66, 20.78, 21.06, 21.45, 21.89, 22.31, 22.66, 22.9, 23.01, 23.0, 22.89, 22.71, 22.49, 22.27, 22.08, 21.95, 21.89],
   [23.31, 22.67, 22.01, 21.57, 21.32, 21.06, 21.23, 21.65, 22.21, 22.68, 23.04, 23.41, 23.79, 23.93, 24.0, 24.03, 24.34, 24.65, 24.68, 24.68, 24.38, 24.23, 24.23, 24.23, 24.19, 24.28, 24.63, 24.87, 24.95, 24.99, 24.84, 24.74]
 ];
 
@@ -249,14 +283,14 @@ const heatData32x32 = [
 const robotStats = ref({
   total: 12,
   change: 2,
-  lowBatteryCount: 3, // 改为低电量设备数
-  offline: 1, // 改为离线设备数
-  offlineChange: '-1' // 离线设备变化
+  lowBatteryCount: 3,
+  offline: 1,
+  offlineChange: '-1'
 });
 
 // 预警统计数据
 const alertStats = ref({
-  current: 3, // 改为当前预警设备数量
+  current: 3,
   week: 12
 });
 
@@ -275,7 +309,7 @@ const robots = ref([
   { id: 'R003', x: 420, y: 100, battery: 95, moving: true, visible: true }
 ]);
 
-// 选中的机器人 ID 列表（用于下拉多选）
+// 选中的机器人 ID 列表
 const selectedRobots = ref(['R001', 'R002', 'R003']);
 
 // 计算属性：只显示选中的机器人
@@ -283,22 +317,14 @@ const visibleRobots = computed(() => {
   return robots.value.filter(robot => selectedRobots.value.includes(robot.id));
 });
 
-// 监听选中状态变化，同步更新机器人的 visible 属性
+// 监听选中状态变化
 watch(selectedRobots, (newSelected) => {
   robots.value.forEach(robot => {
     robot.visible = newSelected.includes(robot.id);
   });
 }, { deep: true });
 
-// 切换机器人显示状态
-const toggleRobotVisibility = (robotId) => {
-  const robot = robots.value.find(r => r.id === robotId);
-  if (robot) {
-    robot.visible = !robot.visible;
-  }
-};
-
-// 热力点数据（用于旧版热力图）
+// 热力点数据
 const heatPoints = ref([
   { x: 100, y: 80, temp: 20, radius: 30 },
   { x: 200, y: 150, temp: 32, radius: 25 },
@@ -307,16 +333,21 @@ const heatPoints = ref([
   { x: 280, y: 250, temp: 48, radius: 45 }
 ]);
 
-// 新增：AMG8833热成像数据相关
-const showThermalOverlay = ref(true);  // 是否显示热力图叠加层
-const gridSize = ref(32);  // 默认32x32网格
-let thermalGrid = ref(heatData32x32);  // 当前热成像网格数据
+// AMG8833 热成像数据相关
+const showThermalOverlay = ref(true);
+const gridSize = ref(32);
+let thermalGrid = ref(heatData32x32);
 
 // 视频流数据
 const videoStreamActive = ref(true);
-const currentVideoFrame = ref(''); // 实际应用中会是视频帧的 URL 或 base64 数据
-const showVideoStream = ref(false); // 控制是否显示视频流
-const showDropdown = ref(false); // 控制下拉菜单显示
+const currentVideoFrame = ref('');
+const showVideoStream = ref(false);
+const showDropdown = ref(false);
+
+// 温度折线图相关
+const temperatureChart = ref(null);
+let chartInstance = null;
+const temperatureHistory = ref([]);
 
 // 切换视图
 const toggleView = (view) => {
@@ -328,90 +359,149 @@ const toggleDropdown = () => {
   showDropdown.value = !showDropdown.value;
 };
 
-// 活动日志
-const activityLogs = ref([
-  { icon: '🔋', title: '电量提醒', message: '机器人 #R002 电量低于20%', time: '2分钟前' },
-  { icon: '🔋', title: '电量提醒', message: '机器人 #R004 电量低于15%', time: '5分钟前' },
-  { icon: '⚠️', title: '预警信息', message: 'B栋检测到温度异常', time: '5分钟前' },
-  { icon: '⚠️', title: '预警信息', message: 'A栋检测到烟雾浓度过高', time: '8分钟前' },
-  { icon: '📍', title: '位置更新', message: '机器人 #R001 到达A栋大厅', time: '8分钟前' },
-  { icon: '📍', title: '位置更新', message: '机器人 #R003 到达B栋走廊', time: '10分钟前' },
-  { icon: '✅', title: '任务完成', message: '机器人 #R002 完成巡检任务', time: '15分钟前' },
-  { icon: '✅', title: '任务完成', message: '机器人 #R005 完成夜间巡检', time: '20分钟前' }
-]);
-
-// 计算属性：合并相同title的活动日志
-const mergedActivityLogs = computed(() => {
-  const merged = {};
+// 初始化温度折线图
+const initTemperatureChart = () => {
+  if (!temperatureChart.value) return;
   
-  activityLogs.value.forEach(log => {
-    if (!merged[log.title]) {
-      merged[log.title] = {
-        icon: log.icon,
-        title: log.title,
-        messages: [],
-        latestTime: log.time
-      };
-    }
-    
-    // 添加消息
-    merged[log.title].messages.push(log.message);
-    
-    // 更新最新时间
-    if (new Date(log.time) > new Date(merged[log.title].latestTime)) {
-      merged[log.title].latestTime = log.time;
-    }
-  });
+  chartInstance = echarts.init(temperatureChart.value);
   
-  // 转换为数组并按时间排序
-  return Object.values(merged)
-    .map(item => ({
-      icon: item.icon,
-      title: item.title,
-      message: item.messages, // 保持为数组格式
-      time: item.latestTime
-    }))
-    .sort((a, b) => new Date(b.time) - new Date(a.time));
-});
-
-// 格式化日志消息，将数组转换为分行显示
-const formatLogMessage = (messages) => {
-  if (Array.isArray(messages)) {
-    return messages.join('<br>');
+  // 初始化历史数据
+  const now = new Date();
+  for (let i = 23; i >= 0; i--) {
+    const time = new Date(now.getTime() - i * 3600000);
+    temperatureHistory.value.push({
+      time: time.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }),
+      temp: 20 + Math.random() * 5
+    });
   }
-  return messages;
+  
+  const option = {
+    tooltip: {
+      trigger: 'axis',
+      formatter: '{b}<br/>温度：{c}°C'
+    },
+    grid: {
+      left: '3%',
+      right: '4%',
+      bottom: '3%',
+      top: '15%',
+      containLabel: true
+    },
+    xAxis: {
+      type: 'category',
+      data: temperatureHistory.value.map(item => item.time),
+      axisLabel: {
+        fontSize: 10,
+        color: '#7f8c8d'
+      },
+      axisLine: {
+        lineStyle: {
+          color: '#e0e0e0'
+        }
+      }
+    },
+    yAxis: {
+      type: 'value',
+      name: '温度 (°C)',
+      nameTextStyle: {
+        fontSize: 10,
+        color: '#7f8c8d'
+      },
+      axisLabel: {
+        fontSize: 10,
+        color: '#7f8c8d',
+        formatter: '{value}°C'
+      },
+      splitLine: {
+        lineStyle: {
+          color: '#f0f0f0'
+        }
+      }
+    },
+    series: [{
+      name: '温度',
+      type: 'line',
+      data: temperatureHistory.value.map(item => item.temp),
+      smooth: true,
+      symbol: 'circle',
+      symbolSize: 6,
+      itemStyle: {
+        color: '#ff6b6b'
+      },
+      lineStyle: {
+        width: 2,
+        color: '#ff6b6b'
+      },
+      areaStyle: {
+        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+          { offset: 0, color: 'rgba(255, 107, 107, 0.3)' },
+          { offset: 1, color: 'rgba(255, 107, 107, 0.05)' }
+        ])
+      }
+    }]
+  };
+  
+  chartInstance.setOption(option);
+  
+  // 响应式调整
+  window.addEventListener('resize', handleChartResize);
 };
 
-const scrollToMap = () => {
-  const mapSection = document.querySelector('.map-section');
-  mapSection.scrollIntoView({ behavior: 'smooth' });
+// 图表大小调整
+const handleChartResize = () => {
+  if (chartInstance) {
+    chartInstance.resize();
+  }
+};
+
+// 更新温度数据
+const updateTemperatureData = (newTemp) => {
+  const now = new Date();
+  const timeStr = now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+  
+  temperatureHistory.value.push({
+    time: timeStr,
+    temp: newTemp
+  });
+  
+  // 保持最近 24 小时数据
+  if (temperatureHistory.value.length > 24) {
+    temperatureHistory.value.shift();
+  }
+  
+  // 更新图表
+  if (chartInstance) {
+    chartInstance.setOption({
+      xAxis: {
+        data: temperatureHistory.value.map(item => item.time)
+      },
+      series: [{
+        data: temperatureHistory.value.map(item => item.temp)
+      }]
+    });
+  }
 };
 
 const getHeatmapColor = (temperature) => {
-  // 根据温度值返回不同的颜色，符合风险热力图颜色编码规范
-  if (temperature < 20) return 'rgba(33, 150, 243, 0.6)'; // 蓝色 - 低温
-  if (temperature <= 30) return 'rgba(33, 150, 243, 0.8)'; // 浅蓝
-  if (temperature <= 35) return 'rgba(255, 193, 7, 0.6)'; // 黄色 - 中温
-  if (temperature <= 40) return 'rgba(255, 152, 0, 0.7)'; // 橙色
-  return 'rgba(244, 67, 54, 0.6)'; // 红色 - 高温
+  if (temperature < 20) return 'rgba(33, 150, 243, 0.6)';
+  if (temperature <= 30) return 'rgba(33, 150, 243, 0.8)';
+  if (temperature <= 35) return 'rgba(255, 193, 7, 0.6)';
+  if (temperature <= 40) return 'rgba(255, 152, 0, 0.7)';
+  return 'rgba(244, 67, 54, 0.6)';
 };
 
-// 新增：根据温度值获取热力图颜色（蓝-黄-红）
 const getThermalColor = (temp) => {
-  // 根据温度值返回对应的颜色，使用蓝-黄-红渐变
-  const minTemp = 7.8; // 最低温度（根据最新数据调整）
-  const maxTemp = 24.68; // 最高温度（根据最新数据调整）
+  const minTemp = 7.8;
+  const maxTemp = 24.68;
   const ratio = Math.min(Math.max((temp - minTemp) / (maxTemp - minTemp), 0), 1);
 
   let r, g, b;
   if (ratio < 0.5) {
-    // 从蓝色到黄色 (0.0 to 0.5)
     const t = ratio * 2;
     r = Math.floor(255 * t);
     g = Math.floor(255 * Math.min(t * 2, 1));
     b = Math.floor(255 * (1 - t));
   } else {
-    // 从黄色到红色 (0.5 to 1.0)
     const t = (ratio - 0.5) * 2;
     r = 255;
     g = Math.floor(255 * (1 - t));
@@ -421,16 +511,13 @@ const getThermalColor = (temp) => {
   return `rgb(${r}, ${g}, ${b})`;
 };
 
-// 新增：根据温度值计算透明度
 const getOpacityByTemp = (temp) => {
-  // 温度越高，透明度越低（更明显）
-  const minTemp = 7.8; // 最低温度
-  const maxTemp = 24.68; // 最高温度
+  const minTemp = 7.8;
+  const maxTemp = 24.68;
   const ratio = Math.min(Math.max((temp - minTemp) / (maxTemp - minTemp), 0), 1);
-  return 0.3 + ratio * 0.7; // 0.3 to 1.0
+  return 0.3 + ratio * 0.7;
 };
 
-// 新增：切换网格大小
 const toggleGridSize = () => {
   if (gridSize.value === 32) {
     gridSize.value = 8;
@@ -441,19 +528,16 @@ const toggleGridSize = () => {
   }
 };
 
-// SSE连接
+// SSE 连接
 let eventSource = null;
 
-// 初始化SSE连接
 const initSSEConnection = () => {
   if (eventSource) {
     eventSource.close();
   }
 
-  // 创建 SSE连接，使用/sse/stream 端点
   eventSource = new EventSource('/api/sse/stream');
 
-  // 监听消息事件
   eventSource.onmessage = (event) => {
     try {
       const data = JSON.parse(event.data);
@@ -463,23 +547,18 @@ const initSSEConnection = () => {
     }
   };
 
-  // 监听错误事件
   eventSource.onerror = (error) => {
-    console.error('SSE连接错误:', error);
-    // 尝试重新连接
+    console.error('SSE 连接错误:', error);
     eventSource.close();
     setTimeout(initSSEConnection, 5000);
   };
 
-  // 监听连接打开事件
   eventSource.onopen = () => {
-    console.log('SSE连接已建立 - /api/sse/stream');
+    console.log('SSE 连接已建立 - /api/sse/stream');
   };
 };
 
-// 更新仪表板数据
 const updateDashboardData = (data) => {
-  // 更新机器人统计数据
   if (data.robotStats) {
     robotStats.value = {
       total: data.robotStats.total || robotStats.value.total,
@@ -490,7 +569,6 @@ const updateDashboardData = (data) => {
     };
   }
 
-  // 更新预警统计数据
   if (data.alertStats) {
     alertStats.value = {
       current: data.alertStats.current || 0,
@@ -498,7 +576,6 @@ const updateDashboardData = (data) => {
     };
   }
 
-  // 更新环境数据
   if (data.environment) {
     environmentData.value = {
       temperature: data.environment.temperature || environmentData.value.temperature,
@@ -506,9 +583,11 @@ const updateDashboardData = (data) => {
       gas: data.environment.gas || environmentData.value.gas,
       pm25: data.environment.pm25 || environmentData.value.pm25
     };
+    
+    // 更新温度折线图
+    updateTemperatureData(environmentData.value.temperature);
   }
 
-  // 更新机器人位置
   if (data.robots && Array.isArray(data.robots)) {
     robots.value = data.robots.map(robot => ({
       id: robot.id,
@@ -519,7 +598,6 @@ const updateDashboardData = (data) => {
     }));
   }
 
-  // 更新热力点数据
   if (data.heatPoints && Array.isArray(data.heatPoints)) {
     heatPoints.value = data.heatPoints.map(point => ({
       x: point.x || Math.random() * 500,
@@ -529,18 +607,6 @@ const updateDashboardData = (data) => {
     }));
   }
 
-  // 更新活动日志
-  if (data.activityLogs && Array.isArray(data.activityLogs)) {
-    // 只保留最新的10条日志
-    const newLogs = data.activityLogs.slice(0, 10);
-    
-    // 如果日志内容有变化，才更新
-    if (JSON.stringify(activityLogs.value) !== JSON.stringify(newLogs)) {
-      activityLogs.value = newLogs;
-    }
-  }
-
-  // 更新热成像数据
   if (data.thermalData) {
     if (data.thermalData.original_8x8) {
       original_8x8.splice(0, original_8x8.length, ...data.thermalData.original_8x8);
@@ -552,10 +618,9 @@ const updateDashboardData = (data) => {
 };
 
 onMounted(() => {
-  // 初始化SSE连接
   initSSEConnection();
+  initTemperatureChart();
   
-  // 初始加载数据，使用/sse/stream 端点
   fetch('/api/sse/stream')
     .then(response => response.json())
     .then(data => {
@@ -567,16 +632,22 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
-  // 清理SSE连接
   if (eventSource) {
     eventSource.close();
     eventSource = null;
   }
+  
+  if (chartInstance) {
+    chartInstance.dispose();
+    chartInstance = null;
+  }
+  
+  window.removeEventListener('resize', handleChartResize);
 });
 </script>
 
 <style scoped>
-/* 全局样式 - 确保页面 100% 高度 */
+/* 全局样式 */
 * {
   margin: 0;
   padding: 0;
@@ -594,7 +665,6 @@ html, body {
   height: 100%;
 }
 
-/* 整页布局样式 */
 .dashboard-container {
   padding: 0;
   width: 100%;
@@ -615,7 +685,6 @@ html, body {
   flex-shrink: 0;
 }
 
-/* 其他内容区域样式 - 紧凑 */
 .content-grid {
   width: 100%;
   display: grid;
@@ -636,7 +705,6 @@ html, body {
   box-sizing: border-box;
 }
 
-/* 数据概览区域 - 缩小版 */
 .data-overview.mini {
   width: 100%;
   padding: 10px;
@@ -761,7 +829,6 @@ html, body {
   font-size: 1rem;
 }
 
-/* 地图头部布局 */
 .map-header {
   display: flex;
   justify-content: space-between;
@@ -781,7 +848,6 @@ html, body {
   font-size: 1rem;
 }
 
-/* 视图切换按钮面板 */
 .view-toggle-panel {
   display: flex;
   gap: 4px;
@@ -813,7 +879,6 @@ html, body {
   border-color: #1a68f5;
 }
 
-/* 机器人筛选下拉菜单容器 */
 .robot-filter {
   display: flex;
   gap: 4px;
@@ -1046,7 +1111,6 @@ html, body {
   transition: opacity 0.3s ease;
 }
 
-/* 视图切换按钮面板 */
 .view-toggle-panel {
   margin-top: 5px;
   display: flex;
@@ -1054,34 +1118,6 @@ html, body {
   justify-content: center;
 }
 
-.view-toggle-btn {
-  flex: 1;
-  padding: 6px 12px;
-  font-size: 0.75rem;
-  background: #f0f5ff;
-  border: 1px solid #d1e0f0;
-  border-radius: 3px;
-  cursor: pointer;
-  transition: all 0.2s;
-  color: #4a6d8d;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-}
-
-.view-toggle-btn:hover {
-  background: #e0eaf5;
-  border-color: #a4c4e0;
-}
-
-.view-toggle-btn.active {
-  background: #2575fc;
-  color: white;
-  border-color: #1a68f5;
-}
-
-/* 视频流容器 */
 .video-stream-container {
   position: absolute;
   top: 0;
@@ -1159,39 +1195,6 @@ html, body {
   border: 1px solid #6c757d;
 }
 
-.video-container {
-  width: 100%;
-  height: 120px;
-  background: #000;
-  border-radius: 4px;
-  overflow: hidden;
-}
-
-.video-stream {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.video-stream img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.no-video {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #7f8c8d;
-  background: #2c3e50;
-}
-
-/* 右侧面板布局 */
 .right-panel {
   display: flex;
   flex-direction: column;
@@ -1218,61 +1221,12 @@ html, body {
   font-size: 1.1rem;
 }
 
-.activity-list {
+/* 温度折线图容器样式 */
+.chart-container {
   flex: 1;
   min-height: 0;
-  max-height: none;
-  overflow-y: auto;
-}
-
-.activity-item {
-  display: flex;
-  padding: 8px 0;
-  border-bottom: 1px solid #eee;
-  cursor: pointer;
-  transition: background-color 0.2s;
-}
-
-.activity-item:last-child {
-  border-bottom: none;
-}
-
-.activity-item:hover {
-  background-color: #f8f9fa;
-}
-
-.activity-icon {
-  font-size: 1.1rem;
-  margin-right: 6px;
-  width: 28px;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: #f8f9fa;
-  border-radius: 6px;
-}
-
-.activity-content {
-  flex: 1;
-}
-
-.activity-content h4 {
-  margin: 0 0 3px 0;
-  color: #2c3e50;
-  font-size: 0.75rem;
-}
-
-.activity-content p {
-  margin: 0 0 3px 0;
-  color: #7f8c8d;
-  font-size: 0.65rem;
-  line-height: 1.2;
-}
-
-.activity-time {
-  font-size: 0.55rem;
-  color: #95a5a6;
+  width: 100%;
+  height: 100%;
 }
 
 /* 响应式设计 */
@@ -1288,38 +1242,16 @@ html, body {
     margin-bottom: 6px;
   }
   
-  .data-overview.compact {
-    margin: 4px;
-    padding: 4px;
-    margin-bottom: 6px;
-  }
-  
   .environment-grid {
     grid-template-columns: repeat(2, 1fr);
-  }
-  
-  .environment-grid.compact {
-    gap: 3px;
   }
   
   .stats-grid {
     grid-template-columns: 1fr;
   }
   
-  .stats-grid.compact {
-    gap: 3px;
-  }
-  
-  .stat-card {
-    padding: 4px;
-  }
-  
   .map-container {
     height: 200px;
-  }
-  
-  .video-container {
-    height: 100px;
   }
 }
 
