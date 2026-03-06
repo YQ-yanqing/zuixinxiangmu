@@ -44,7 +44,16 @@
             </div>
           </div>
           <div class="chart-section">
-            <h3>风险报表</h3>
+            <!-- 风险报表头部 - 日期放在右上角 -->
+            <!-- 风险报表头部 - 右上角改为报表类型下拉框 -->
+            <div class="report-header">
+              <h3>风险报表</h3>
+              <select v-model="reportType" @change="updateReportTitle" class="report-period-select">
+                <option value="daily">日报</option>
+                <option value="weekly">周报</option>
+                <option value="monthly">月报</option>
+              </select>
+            </div>
             <div class="report-content" v-if="reportGenerated">
               <h4>{{ reportTitle }}</h4>
               <div class="report-stats">
@@ -61,15 +70,12 @@
                   </ul>
                 </div>
                 
-                <div class="stat-card">
-                  <h5>风险趋势分析</h5>
-                  <p>{{ riskTrendAnalysis }}</p>
-                </div>
+                <!-- 已删除：风险趋势分析 -->
                 
-                <div class="stat-card">
+                <!-- <div class="stat-card">
                   <h5>管理建议</h5>
                   <p>{{ managementSuggestions }}</p>
-                </div>
+                </div> -->
               </div>
             </div>
             <div v-else class="generate-report-section">
@@ -159,20 +165,7 @@
       </div>
     </div>
 
-    <!-- 报告导出 -->
-    <div class="export-section card" v-if="reportGenerated">
-      <div class="export-header">
-        <h3>报告导出</h3>
-        <div class="export-controls">
-          <button @click="exportPDF" class="btn btn-secondary pdf">
-            <i class="icon">📄</i> 导出 PDF
-          </button>
-          <button @click="exportWord" class="btn btn-primary word">
-            <i class="icon">📝</i> 导出 Word
-          </button>
-        </div>
-      </div>
-    </div>
+    <!-- 已删除：报告导出区域 -->
   </div>
 </template>
 
@@ -241,11 +234,23 @@ const emit = defineEmits(['data-loaded', 'category-selected', 'error']);
 const startDate = ref('');
 const endDate = ref('');
 const selectedRegion = ref('');
-const reportType = ref('daily');
+const reportType = ref('daily');  // 默认每日报表
 const showChart = ref(true);
-const reportGenerated = ref(false);
+const reportGenerated = ref(true);  // 默认显示报表
 const showCategoryDropdown = ref(true);
 const selectedCategory = ref(props.initialCategory);
+const currentDate = ref('');  // 当前日期
+// 响应式数据 - reportType 已存在，无需重复定义
+
+// 监听 reportType 变化
+watch(reportType, (newVal) => {
+  updateReportTitle();
+});
+
+// 更新报表标题
+const updateReportTitle = () => {
+  reportTitle.value = `${getReportTypeName()} - ${currentDate.value}`;
+};
 
 // 自动刷新定时器
 let refreshTimer = null;
@@ -327,7 +332,7 @@ const chartOptions = ref({
 });
 
 // 报表数据
-const reportTitle = ref('');
+const reportTitle = ref('每日风险报告');
 const highRiskPoints = ref([
   { device: '设备 A01', location: '一楼', risk: '高温异常', level: '高', time: '2026-01-15 14:30' },
   { device: '设备 B05', location: '二楼', risk: '振动超标', level: '中', time: '2026-01-15 10:15' },
@@ -335,8 +340,8 @@ const highRiskPoints = ref([
   { device: '设备 D03', location: '四楼', risk: '温湿度异常', level: '低', time: '2026-01-14 16:20' },
   { device: '设备 E07', location: '五楼', risk: '空气质量差', level: '中', time: '2026-01-14 11:10' }
 ]);
-const riskTrendAnalysis = ref('根据近期数据分析，设备故障率较上月下降 15%，但仍需重点关注一楼的高温问题。高温风险点数量较上周增加了 20%，建议加强相关设备的日常巡检。');
-const managementSuggestions = ref('1. 加强一楼设备的日常巡检频次\n2. 对高温异常设备进行专项维保\n3. 优化设备运行参数，减少非计划停机时间\n4. 增加温度监控点位，提高监测精度\n5. 完善应急预案，提高应急响应速度');
+// 已删除：riskTrendAnalysis
+// const managementSuggestions = ref('1. 加强一楼设备的日常巡检频次\n2. 对高温异常设备进行专项维保\n3. 优化设备运行参数，减少非计划停机时间\n4. 增加温度监控点位，提高监测精度\n5. 完善应急预案，提高应急响应速度');
 
 // 传感器记录数据
 const sensors = ref([
@@ -398,6 +403,10 @@ onMounted(() => {
   
   startDate.value = formatDate(oneWeekAgo);
   endDate.value = formatDate(today);
+  currentDate.value = formatDate(today);  // 设置当前日期
+  
+  // 默认设置报表标题
+  reportTitle.value = `每日风险报告 - ${currentDate.value}`;
   
   document.addEventListener('click', handleClickOutside);
   document.addEventListener('keydown', handleKeydown);
@@ -426,7 +435,7 @@ const selectCategory = (categoryName) => {
 
 // 生成报表
 const generateReport = () => {
-  reportTitle.value = `${getReportTypeName()} - ${new Date().toLocaleDateString('zh-CN')}`;
+  reportTitle.value = `${getReportTypeName()} - ${currentDate.value}`;
   reportGenerated.value = true;
 };
 
@@ -439,14 +448,7 @@ const getReportTypeName = () => {
   }
 };
 
-// 导出功能
-const exportPDF = () => {
-  alert('正在导出 PDF 报告...');
-};
-
-const exportWord = () => {
-  alert('正在导出 Word 报告...');
-};
+// 已删除：exportPDF、exportWord 方法
 
 // 其他操作方法
 const importData = () => {
@@ -686,6 +688,30 @@ const updateChartData = (data) => {
   margin-top: 10px;
 }
 
+/* 报表头部样式 - 日期右上角 */
+.report-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+}
+
+.report-header h3 {
+  margin: 0;
+  color: #2c3e50;
+  font-size: 1.2rem;
+  font-weight: 600;
+}
+
+.report-date {
+  color: #7f8c8d;
+  font-size: 0.9rem;
+  background: #f8f9fa;
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid #eee;
+}
+
 /* 表格区域 */
 .data-sequences {
   padding: 0;
@@ -750,6 +776,18 @@ const updateChartData = (data) => {
   margin-top: 0;
   margin-bottom: 15px;
   font-size: 1.1rem;
+}
+
+/* 复用现有 select 样式 */
+.report-header select {
+  color: #7f8c8d;
+  font-size: 0.9rem;
+  background: #f8f9fa;
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid #eee;
+  cursor: pointer;
+  outline: none;
 }
 
 .stat-card {
